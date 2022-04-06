@@ -34,19 +34,34 @@ func (fi fileInfo) Path() string {
 	return fi.path
 }
 
-func ListDirectory(ctx context.Context, dir string, depth int, maint uint32) ([]FileInfo, error) {
+type FileSearcher struct {
+	logger *zap.Logger
+} 
+
+func NewFileSearcher(logger *zap.Logger) *FileSearcher {
+	return &FileSearcher{
+		logger:logger,
+	}
+}
+
+
+func (f *FileSearcher) listDirectory(ctx context.Context, dir string,
+					depth int, maint uint32) ([]FileInfo, error) {
 	if depth <= 0 {
 		return nil, nil
 	}
 
 	select {
 	case <-ctx.Done():
+		f.logger.Info("context is done, skipping dir", zap.String("dir", dir))
 		return nil, nil
 	default:
 		// time.Sleep(time.Second * 10)
 		var result []FileInfo
 		res, err := os.ReadDir(dir)
 		if err != nil {
+			f.logger.Error("could not read dir", zap.Error(err),
+			zap.String("dir", dir))
 			return nil, err
 		}
 
@@ -61,45 +76,58 @@ func ListDirectory(ctx context.Context, dir string, depth int, maint uint32) ([]
 			}
 
 			if entry.IsDir() {
-				child, err := ListDirectory(ctx, path, depth-1, maint)
+				child, err := f.listDirectory(ctx, path, depth-1, maint)
 				if err != nil {
-					return nil, err
+					return result, err
 				}
 				result = append(result, child...)
 			} else {
 				info, err := entry.Info()
-				if err == nil {
-					result = append(result, fileInfo{info,path})
+				if err != nil {
+					return result, nil
 				}
+				result = append(result, fileInfo{info,path})
 			}
 		}
 	return result, err
 	}
 }
 
-func FindFiles(ctx context.Context, ext string, maxDepth int, maint uint32) (FileList, error) {	
+func (f *FileSearcher) findFiles(ctx context.Context, ext string, maxDepth int, maint uint32) (FileList, error) {	
 	wd, err := os.Getwd()
 	
 	if err != nil {
+		f.logger.Error("Could not get work directory", zap.Error(err))
 		return nil, err
 	}
 
-	files, err := ListDirectory(ctx, wd, maxDepth, maint)
+	files, err := f.listDirectory(ctx, wd, maxDepth, maint)
 
 	if err != nil {
-		return nil, err
+		f.logger.Error("Could not get list of files", zap.Error(err))
+		if len(files) == 0 {
+			return nil, err
+		}
+		f.logger.Warn("Could not get list of files", zap.Error(err))
 	}
 
 	fl := make(FileList, len(files))
 	for _, file := range files {
-		if filepath.Ext(file.Name()) == ext {
+		fileExt :=filepath.Ext(file.Name())
+		f.logger.Debug("Compare extensions", zap.String("target_ext", ext),
+						zap.String("current_ext", fileExt))
+
+		if fileExt == ext {
+			// f.logger.Debug("Compare extensions", zap.String("target_ext", ext),
+			// 				zap.String("current", fileExt))
+
 			fl[file.Name()] = TargetFile{
 				Name: file.Name(),
 				Path: file.Path(),
 			}
 		}
 	}
-	return fl, nil
+	return fl, err
 }
 
 type Config struct {
@@ -125,7 +153,9 @@ func main() {
 
 	var err error
 	if curEnv == production {
-		logger, err = zap.NewProduction()
+		logCfg := zap.NewProductionConfig()
+		logCfg.OutputPaths = []string{"stderr"}
+		logger, err = logCfg.Build()
 	} else {
 		logger, err = zap.NewDevelopment()
 	}
@@ -134,7 +164,7 @@ func main() {
 	}
 	
 	logger.Info("starting", zap.Int("pid", os.Getpid()),
-		zap.String("commit hash", GitHash), zap.String("Buid time", BuidTime),
+		zap.String("commit_hash", GitHash), zap.String("Buid_time", BuidTime),
 		zap.String("version", Version))
 
 	defer logger.Sync()
@@ -160,8 +190,10 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGUSR1, syscall.SIGUSR2)
 	
 	waitCh := make(chan struct{})
+	fileSearcher := NewFileSearcher(logger)
+
 	go func() {
-		res, err := FindFiles(ctx, wantExt, cfg.MaxDepth, maint)
+		res, err := fileSearcher.findFiles(ctx, wantExt, cfg.MaxDepth, maint)
 	
 		if err != nil {
 			logger.Error("Error on search: ", zap.Error(err))
@@ -174,11 +206,16 @@ func main() {
 		waitCh <- struct{}{}
 	}()
 	go func() {
-		<- sigCh
-		log.Println("Signal received, terminate")	
+		<-sigCh
+		logger.Info("Signal received, terminate ...")
 		cancel()
 	}()
 	
 	<-waitCh
-	log.Println("Done")
+	logger.Info("Done")
 }
+
+
+//написать алгоритм простого действия и сделать его логирование
+//написать логи к первому дз
+//
