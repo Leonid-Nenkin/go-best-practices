@@ -1,32 +1,51 @@
-package main_tests
+package tests
 
 import (
-	"context"
+	// "context"
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
-	"net/http"
-	"strings"
+	// "io/ioutil"
+	// "net/http"
+	// "strings"
 	"testing"
+	mock "github.com/stretchr/testify/mock"
 )
 
-func TestNewFileSearcher (t *testing T) {
-	res, err := main.NewFileSearcher()
-	if err != nil {
-		t.Errorf("....")
-	}
+// создание нового crawler'a
+	// указатель не nil
+	// максимальная глубина равна заданной
 
-	expected := 300
-	if res != expected {
-		t.Errorf("...")
-	}
+// количество найденных файлов
+// увеличение глубины поиска
+// увеличение/уменьшение глубины поиска по сигналу
+
+type Searcher struct {
+	mock.Mock
 }
 
-func TestListDirectory (t *testing T) {
+func TestNewFileSearcher (t *testingT) {
+	maxDepth := uint64(3)
+	r := new(Searcher)
+	cr := NewCrawler(r, maxDepth)
+	assert.NotNil(t, cr)
+	assert.Equal(t, maxDepth, cr.MaxDepth)
 
+	// res, err := main.NewFileSearcher()
+	// if err != nil {
+	// 	t.Errorf("....")
+	// }
+
+	// expected := 300
+	// if res != expected {
+	// 	t.Errorf("...")
+	// }
 }
 
-func TesTfindFiles (t *testing T) {
+// func TestListDirectory (t *testing T) {
 
-}
+// }
+
+// func TesTfindFiles (t *testing T) {
+
+// }
 
 
